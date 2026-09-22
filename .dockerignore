@@ -1,0 +1,13 @@
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+chroma_data
+chroma_db
+.pytest_cache
+.coverage
+htmlcov
+.git
+.gitignore
