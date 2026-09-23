@@ -1,9 +1,8 @@
-Python
-
-pycache/
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
 build/
 develop-eggs/
 dist/
@@ -16,49 +15,33 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-Virtual Environment
 
 venv/
 env/
 .venv/
 ENV/
-env.bak/
-venv.bak/
-
-Environment Variables / Secrets
 
 .env
 .env.local
-.env.development
-.env.test
-.env.prod
+.env.*.local
 *.pem
-
-Vector Store / Database
 
 chroma_data/
 chroma_db/
 *.sqlite3
-*.db
+db.sqlite3-journal
+staticfiles/
+media/
 
-IDEs and Editors
+.pytest_cache/
+.coverage
+htmlcov/
 
 .vscode/
 .idea/
 *.swp
 *.swo
-
-OS Generated Files
-
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
