@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -201,3 +201,28 @@ class AdminResetStoreView(APIView):
                 {"error": "Failed to reset store. An internal error occurred."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class StatsView(APIView):
+    """
+    GET /api/stats/
+    Returns vector store statistics. Publicly accessible.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request) -> Response:
+        try:
+            total_chunks = rag_service.collection.count()
+        except Exception:
+            logger.exception("Failed to retrieve ChromaDB collection count")
+            total_chunks = 0
+
+        return Response(
+            {
+                "total_chunks": total_chunks,
+                "indexed_chunks": total_chunks,
+                "status": "operational",
+            },
+            status=status.HTTP_200_OK,
+        )
+

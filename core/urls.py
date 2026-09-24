@@ -2,10 +2,14 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 
 
 def health_check(request):
+    if request.method == "HEAD":
+        response = HttpResponse(status=200)
+        response["Content-Type"] = "application/json"
+        return response
     return JsonResponse({"status": "healthy", "service": "DocuMind AI Backend"})
 
 

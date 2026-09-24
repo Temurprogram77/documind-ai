@@ -3,7 +3,8 @@ from documents.views import (
     DocumentUploadView,
     DocumentListView,
     ChatSSEView,
-    AdminResetStoreView
+    AdminResetStoreView,
+    StatsView
 )
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
     path("documents/", DocumentListView.as_view(), name="document_list"),
     path("chat/", ChatSSEView.as_view(), name="chat_sse"),
     path("admin/reset/", AdminResetStoreView.as_view(), name="admin_reset_store"),
+    path("stats/", StatsView.as_view(), name="document_stats"),
 ]

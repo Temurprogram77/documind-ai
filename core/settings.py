@@ -114,6 +114,14 @@ TOP_K = 4
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,https://documind-frontend-sooty.vercel.app,https://documind-ai-plum-gamma.vercel.app",
+    ).split(",")
     if origin.strip()
 ]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+]
+CORS_ALLOW_CREDENTIALS = True
+
