@@ -46,3 +46,37 @@ def auth_admin_client(admin_user):
     token = str(RefreshToken.for_user(admin_user).access_token)
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
     return client
+
+
+@pytest.fixture(autouse=True)
+def isolate_chroma_for_tests(tmp_path, settings):
+    """
+    Ensures tests use an isolated temporary directory and collection for ChromaDB,
+    preventing any test resets from wiping actual user or development vectors.
+    """
+    import chromadb
+    from documents.views import rag_service
+
+    test_chroma_dir = str(tmp_path / "test_chroma")
+    settings.CHROMA_PERSIST_DIR = test_chroma_dir
+    settings.CHROMA_COLLECTION_NAME = "test_documind_vectors"
+
+    old_client = rag_service.chroma_client
+    old_coll = rag_service.collection
+    old_dir = rag_service.persist_dir
+    old_name = rag_service.collection_name
+
+    rag_service.persist_dir = test_chroma_dir
+    rag_service.collection_name = "test_documind_vectors"
+    rag_service.chroma_client = chromadb.PersistentClient(path=test_chroma_dir)
+    rag_service.collection = rag_service.chroma_client.get_or_create_collection(
+        name="test_documind_vectors",
+        metadata={"hnsw:space": "cosine"}
+    )
+
+    yield
+
+    rag_service.persist_dir = old_dir
+    rag_service.collection_name = old_name
+    rag_service.chroma_client = old_client
+    rag_service.collection = old_coll

@@ -134,11 +134,11 @@ class RAGService:
         user_id: int,
         document_id: int,
         query: str,
-        top_k: int = 4
+        top_k: int = 6
     ) -> List[Dict[str, Any]]:
         """
         Retrieves top relevant chunks filtered strictly by user_id and document_id.
-        Discards chunks exceeding the distance threshold.
+        Orders chunks by semantic similarity (ascending distance).
         """
         try:
             total_elements = self.collection.count()
@@ -146,15 +146,14 @@ class RAGService:
                 logger.warning("Query attempted but ChromaDB collection is empty.")
                 return []
 
-            actual_k = max(1, min(top_k, total_elements))
-
-            # ChromaDB requires explicit operator dictionaries ($eq) inside $and lists
             where_filter = {
                 "$and": [
                     {"user_id": {"$eq": int(user_id)}},
                     {"document_id": {"$eq": int(document_id)}}
                 ]
             }
+
+            actual_k = max(1, min(top_k, total_elements))
 
             results = self.collection.query(
                 query_texts=[query],
@@ -175,6 +174,7 @@ class RAGService:
                     contexts.append({
                         "text": doc,
                         "page_number": meta.get("page_number", 1),
+                        "chunk_index": meta.get("chunk_index", 0),
                         "distance": dist,
                     })
 
@@ -185,6 +185,7 @@ class RAGService:
                     contexts.append({
                         "text": doc,
                         "page_number": meta.get("page_number", 1),
+                        "chunk_index": meta.get("chunk_index", 0),
                         "distance": distances[i] if i < len(distances) else 0.0,
                     })
 
@@ -196,37 +197,94 @@ class RAGService:
     def stream_answer(self, user_id: int, document_id: int, query: str) -> Iterator[str]:
         """
         Streams grounded answer tokens from Gemini 3.6 Flash based on retrieved snippets
-        or general intelligence.
+        or full document context.
         """
         try:
-            contexts = self.query_context(
-                user_id=user_id,
-                document_id=document_id,
-                query=query,
-                top_k=getattr(settings, "TOP_K", 6)
+            where_filter = {
+                "$and": [
+                    {"user_id": {"$eq": int(user_id)}},
+                    {"document_id": {"$eq": int(document_id)}}
+                ]
+            }
+
+            # Check total chunks for this document
+            doc_data = self.collection.get(
+                where=where_filter,
+                include=["documents", "metadatas"]
             )
+            doc_ids = doc_data.get("ids", []) if doc_data else []
+            total_doc_chunks = len(doc_ids)
+
+            # Self-healing: if document exists in DB but chunks are missing in ChromaDB, re-index on the fly
+            if total_doc_chunks == 0:
+                try:
+                    from documents.models import Document
+                    doc_obj = Document.objects.filter(id=document_id, user_id=user_id).first()
+                    if doc_obj and doc_obj.file and os.path.exists(doc_obj.file.path):
+                        logger.info("Self-healing: Re-indexing chunks for document %s", document_id)
+                        with open(doc_obj.file.path, "rb") as f:
+                            pdf_bytes = f.read()
+                        chunks = self.extract_and_chunk_pdf(
+                            file_bytes=pdf_bytes,
+                            user_id=user_id,
+                            document_id=document_id,
+                            filename=doc_obj.filename
+                        )
+                        if chunks:
+                            self.ingest_chunks(chunks)
+                            doc_data = self.collection.get(
+                                where=where_filter,
+                                include=["documents", "metadatas"]
+                            )
+                            doc_ids = doc_data.get("ids", []) if doc_data else []
+                            total_doc_chunks = len(doc_ids)
+                except Exception:
+                    logger.exception("Failed to auto-index missing document chunks")
+
+            # If document is small/medium (<= 25 chunks, up to ~25 pages),
+            # Gemini 3.6 Flash easily ingests the entire document in natural reading order.
+            # This provides 100% full context and answers both general and specific questions.
+            if 0 < total_doc_chunks <= 25:
+                all_chunks: List[Dict[str, Any]] = []
+                for i in range(total_doc_chunks):
+                    meta = doc_data["metadatas"][i] if doc_data.get("metadatas") else {}
+                    all_chunks.append({
+                        "text": doc_data["documents"][i],
+                        "page_number": meta.get("page_number", 1),
+                        "chunk_index": meta.get("chunk_index", 0),
+                    })
+                all_chunks.sort(key=lambda x: (x["page_number"], x["chunk_index"]))
+                contexts = all_chunks
+            else:
+                contexts = self.query_context(
+                    user_id=user_id,
+                    document_id=document_id,
+                    query=query,
+                    top_k=getattr(settings, "TOP_K", 10)
+                )
 
             if contexts:
                 formatted_context = "\n\n".join([
-                    f"--- Snippet {i+1} [Page {c['page_number']}] ---\n{c['text']}"
+                    f"--- [Sahifa {c['page_number']}, Qism {i+1}] ---\n{c['text']}"
                     for i, c in enumerate(contexts)
                 ])
                 context_instruction = (
-                    f"CONTEXT FROM UPLOADED DOCUMENT:\n{formatted_context}\n\n"
-                    "Use the above context snippets from the user's document to provide a thorough, accurate, and well-cited answer. "
-                    "Cite the relevant page numbers whenever referencing facts from the document."
+                    f"HUJJAT MATNI (KONTEKST):\n{formatted_context}\n\n"
+                    "KO'RSATMA: Yuqoridagi hujjat matnidan foydalanib, foydalanuvchining savoliga batafsil, "
+                    "aniq va to'liq javob bering. Hujjatdagi ma'lumotlarga qat'iy tayaning va tegishli sahifa raqamlarini "
+                    "(masalan, [1-sahifa] yoki [Sahifa 1]) ko'rsating. Agar foydalanuvchi umumiy savol bersa (masalan, 'PDF nima haqida?'), "
+                    "hujjatning to'liq mazmuni, unda keltirilgan shaxs/mavzu, asosiy bo'limlar va faktlarni to'liq ochib bering."
                 )
             else:
                 context_instruction = (
-                    "Note: No specific snippets were retrieved from the document for this query. "
-                    "Answer the user's query helpfully, politely, and accurately using your general knowledge."
+                    "Eslatma: Hujjatdan matn topilmadi. Foydalanuvchi savoliga umumiy bilimlaringiz asosida yordam bering."
                 )
 
             full_prompt = (
-                f"SYSTEM INSTRUCTION:\n{self.SYSTEM_PROMPT}\n\n"
+                f"TIZIM KO'RSATMASI:\n{self.SYSTEM_PROMPT}\n\n"
                 f"{context_instruction}\n\n"
-                f"USER QUERY:\n{query}\n\n"
-                f"ANSWER:"
+                f"FOYDALANUVCHI SAVOLI:\n{query}\n\n"
+                f"JAVOB:"
             )
 
             api_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
