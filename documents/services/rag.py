@@ -20,12 +20,12 @@ class RAGService:
 
     SIMILARITY_THRESHOLD = 1.2  # Generous threshold to support multilingual queries
 
-    STRICT_SYSTEM_PROMPT = (
-        "You are an expert document intelligence assistant named DocuMind AI. "
-        "Answer the user query thoroughly and accurately based on the provided context snippets from the uploaded document. "
-        "Always cite the relevant page numbers (e.g. [1-sahifa] or [Page 1]) when referencing facts. "
-        "CRITICAL LANGUAGE RULE: You MUST always respond in the SAME language that the user asks in (e.g., if the user asks in Uzbek, respond entirely in polite and professional Uzbek). "
-        "Be insightful: if asked who a person is or what a document is about, summarize all facts found in the document context."
+    SYSTEM_PROMPT = (
+        "You are an intelligent, helpful, and highly capable AI assistant named DocuMind AI, powered by Gemini 3.6 Flash. "
+        "Your goal is to answer the user's questions clearly, accurately, and thoroughly. "
+        "When context from an uploaded document is provided, prioritize it and cite the page numbers (e.g. [1-sahifa] or [Page 1]). "
+        "When context is not directly applicable or the user asks general questions (greetings, analysis, questions about people, code, etc.), answer helpfully and intelligently. "
+        "CRITICAL LANGUAGE RULE: You MUST always respond in the EXACT same language that the user asks in (e.g., if the user asks in Uzbek, respond entirely in polite and professional Uzbek; if in Russian, respond in Russian; if in English, respond in English)."
     )
 
     def __init__(self) -> None:
@@ -195,46 +195,52 @@ class RAGService:
 
     def stream_answer(self, user_id: int, document_id: int, query: str) -> Iterator[str]:
         """
-        Streams grounded answer tokens from Gemini based on retrieved snippets.
+        Streams grounded answer tokens from Gemini 3.6 Flash based on retrieved snippets
+        or general intelligence.
         """
         try:
             contexts = self.query_context(
                 user_id=user_id,
                 document_id=document_id,
                 query=query,
-                top_k=getattr(settings, "TOP_K", 4)
+                top_k=getattr(settings, "TOP_K", 6)
             )
 
-            if not contexts:
-                yield "Hujjatdan ushbu savol bo'yicha ma'lumot topilmadi."
-                return
-
-            formatted_context = "\n\n".join([
-                f"--- Snippet {i+1} [Page {c['page_number']}] ---\n{c['text']}"
-                for i, c in enumerate(contexts)
-            ])
+            if contexts:
+                formatted_context = "\n\n".join([
+                    f"--- Snippet {i+1} [Page {c['page_number']}] ---\n{c['text']}"
+                    for i, c in enumerate(contexts)
+                ])
+                context_instruction = (
+                    f"CONTEXT FROM UPLOADED DOCUMENT:\n{formatted_context}\n\n"
+                    "Use the above context snippets from the user's document to provide a thorough, accurate, and well-cited answer. "
+                    "Cite the relevant page numbers whenever referencing facts from the document."
+                )
+            else:
+                context_instruction = (
+                    "Note: No specific snippets were retrieved from the document for this query. "
+                    "Answer the user's query helpfully, politely, and accurately using your general knowledge."
+                )
 
             full_prompt = (
-                f"SYSTEM INSTRUCTION:\n{self.STRICT_SYSTEM_PROMPT}\n\n"
-                f"CONTEXT:\n{formatted_context}\n\n"
+                f"SYSTEM INSTRUCTION:\n{self.SYSTEM_PROMPT}\n\n"
+                f"{context_instruction}\n\n"
                 f"USER QUERY:\n{query}\n\n"
                 f"ANSWER:"
             )
 
             api_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
             if not api_key:
-                yield "Gemini API kaliti (GEMINI_API_KEY) ko'rsatilmagan. Iltimos, Render environment sozlamalarida GEMINI_API_KEY ni sozlang."
+                yield "Gemini API kaliti (GEMINI_API_KEY) ko'rsatilmagan. Iltimos, sozlamalarda GEMINI_API_KEY ni sozlang."
                 return
 
             genai.configure(api_key=api_key)
 
             model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
-            if "3.6" in model_name:
-                model_name = "gemini-3.6-flash"
 
             model = genai.GenerativeModel(
                 model_name=model_name,
-                generation_config={"temperature": 0.2}
+                generation_config={"temperature": 0.3}
             )
             response = model.generate_content(full_prompt, stream=True)
             for chunk in response:
