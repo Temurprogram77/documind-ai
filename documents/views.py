@@ -11,6 +11,8 @@ from rest_framework.request import Request
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.renderers import BaseRenderer, JSONRenderer
+from rest_framework.negotiation import DefaultContentNegotiation
 
 from documents.models import Document
 from documents.serializers import DocumentSerializer, ChatQuerySerializer
@@ -134,6 +136,29 @@ class DocumentListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class ServerSentEventRenderer(BaseRenderer):
+    media_type = "text/event-stream"
+    format = "text"
+    charset = "utf-8"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        if isinstance(data, (dict, list)):
+            return json.dumps(data)
+        return data
+
+
+class OpenContentNegotiation(DefaultContentNegotiation):
+    """
+    Permissive content negotiator for SSE streaming endpoints.
+    Allows text/event-stream, application/json, and wildcards without 406 NotAcceptable.
+    """
+    def select_renderer(self, request, renderers, format_suffix=None):
+        try:
+            return super().select_renderer(request, renderers, format_suffix)
+        except Exception:
+            return (renderers[0], renderers[0].media_type)
+
+
 class ChatSSEView(APIView):
     """
     POST /api/chat/
@@ -141,6 +166,8 @@ class ChatSSEView(APIView):
     Streams token-by-token using Django's StreamingHttpResponse.
     """
     permission_classes = [IsAuthenticated]
+    renderer_classes = [ServerSentEventRenderer, JSONRenderer]
+    content_negotiation_class = OpenContentNegotiation
 
     def post(self, request: Request) -> Response:
         serializer = ChatQuerySerializer(data=request.data)
