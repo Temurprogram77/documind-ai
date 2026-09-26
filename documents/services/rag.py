@@ -227,9 +227,9 @@ class RAGService:
 
             genai.configure(api_key=api_key)
 
-            model_name = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash") or "gemini-1.5-flash"
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
             if "3.6" in model_name:
-                model_name = "gemini-1.5-flash"
+                model_name = "gemini-3.6-flash"
 
             model = genai.GenerativeModel(
                 model_name=model_name,
