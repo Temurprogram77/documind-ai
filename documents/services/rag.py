@@ -228,9 +228,9 @@ class RAGService:
 
             genai.configure(api_key=api_key)
 
-            model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash") or "gemini-1.5-flash"
             if "3.6" in model_name:
-                model_name = "gemini-3.6-flash"
+                model_name = "gemini-1.5-flash"
 
             model = genai.GenerativeModel(
                 model_name=model_name,
@@ -246,6 +246,19 @@ class RAGService:
         except Exception as exc:
             logger.exception("Error during LLM stream generation")
             yield f"\n\n[Javob yaratishda xatolik: {str(exc)}]"
+
+    def delete_document_chunks(self, user_id: int, document_id: int) -> None:
+        """Removes all indexed chunks for a specific document and tenant."""
+        try:
+            where_filter = {
+                "$and": [
+                    {"user_id": {"$eq": int(user_id)}},
+                    {"document_id": {"$eq": int(document_id)}}
+                ]
+            }
+            self.collection.delete(where=where_filter)
+        except Exception:
+            logger.exception("Failed to delete document chunks from ChromaDB")
 
     def reset_vector_store(self) -> None:
         """Deletes and recreates the ChromaDB collection (staff only)."""

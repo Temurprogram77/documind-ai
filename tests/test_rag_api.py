@@ -100,6 +100,34 @@ class TestRAGSecurity:
         # Superuser / Staff member -> 200 OK
         assert auth_admin_client.delete(reset_url).status_code == 200
 
+    def test_document_delete_tenant_isolation(self, auth_client_a, auth_client_b, user_a):
+        """User B cannot delete User A's document; User A can delete their own."""
+        doc = Document.objects.create(
+            user=user_a,
+            filename="to_delete.pdf",
+            file=SimpleUploadedFile("to_delete.pdf", VALID_PDF_BYTES, content_type="application/pdf")
+        )
+
+        delete_url = reverse("document_detail", kwargs={"pk": doc.id})
+
+        # Tenant B attempts to delete Tenant A's document -> 404 Not Found
+        res_b = auth_client_b.delete(delete_url)
+        assert res_b.status_code == 404
+
+        # Tenant A deletes their own document -> 200 OK
+        res_a = auth_client_a.delete(delete_url)
+        assert res_a.status_code == 200
+        assert not Document.objects.filter(id=doc.id).exists()
+
+    def test_stats_endpoint_returns_operational(self, api_client):
+        """Stats endpoint is accessible and returns collection statistics."""
+        stats_url = reverse("document_stats")
+        response = api_client.get(stats_url)
+        assert response.status_code == 200
+        assert "total_chunks" in response.data
+        assert response.data["status"] == "operational"
+
+
 
 @pytest.mark.django_db
 class TestAuthenticationEndpoints:

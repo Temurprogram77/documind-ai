@@ -136,6 +136,27 @@ class DocumentListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class DocumentDetailView(APIView):
+    """
+    DELETE /api/documents/<pk>/
+    Deletes a document and purges its vector chunks for the authenticated owner.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request: Request, pk: int) -> Response:
+        document = get_object_or_404(Document, id=pk, user=request.user)
+        doc_id = document.id
+
+        rag_service.delete_document_chunks(user_id=request.user.id, document_id=doc_id)
+        document.delete()
+
+        return Response(
+            {"status": "success", "message": f"Document {doc_id} successfully deleted."},
+            status=status.HTTP_200_OK
+        )
+
+
+
 class ServerSentEventRenderer(BaseRenderer):
     media_type = "text/event-stream"
     format = "text"
