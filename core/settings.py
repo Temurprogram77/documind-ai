@@ -108,7 +108,7 @@ CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "documind_vectors")
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
-TOP_K = 4
+TOP_K = int(os.getenv("TOP_K", "6"))
 
 # Strict CORS: specify exact allowed origins, never wildcard '*' in production
 CORS_ALLOW_ALL_ORIGINS = False

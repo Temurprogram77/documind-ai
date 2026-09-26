@@ -18,14 +18,14 @@ class RAGService:
     and grounded answer generation.
     """
 
-    SIMILARITY_THRESHOLD = 0.75  # Cosine distance cutoff to discard noisy chunks
+    SIMILARITY_THRESHOLD = 1.2  # Generous threshold to support multilingual queries
 
     STRICT_SYSTEM_PROMPT = (
-        "You are a helpful document assistant. "
-        "Answer the user query based strictly on the provided context snippets. "
-        "Always cite the relevant page numbers (e.g. [Page 2]) for the facts you provide. "
-        "If the information is not available in the context snippets, state clearly: "
-        "'I cannot find this information in the document.'"
+        "You are an expert document intelligence assistant named DocuMind AI. "
+        "Answer the user query thoroughly and accurately based on the provided context snippets from the uploaded document. "
+        "Always cite the relevant page numbers (e.g. [1-sahifa] or [Page 1]) when referencing facts. "
+        "CRITICAL LANGUAGE RULE: You MUST always respond in the SAME language that the user asks in (e.g., if the user asks in Uzbek, respond entirely in polite and professional Uzbek). "
+        "Be insightful: if asked who a person is or what a document is about, summarize all facts found in the document context."
     )
 
     def __init__(self) -> None:
@@ -178,14 +178,15 @@ class RAGService:
                         "distance": dist,
                     })
 
-            # If strict threshold filtered all out, fallback to top document
+            # If strict threshold filtered all out, fallback to all retrieved document chunks
             if not contexts and documents:
-                meta = metadatas[0] if metadatas else {}
-                contexts.append({
-                    "text": documents[0],
-                    "page_number": meta.get("page_number", 1),
-                    "distance": distances[0] if distances else 0.0,
-                })
+                for i, doc in enumerate(documents):
+                    meta = metadatas[i] if i < len(metadatas) else {}
+                    contexts.append({
+                        "text": doc,
+                        "page_number": meta.get("page_number", 1),
+                        "distance": distances[i] if i < len(distances) else 0.0,
+                    })
 
             return contexts
         except Exception:
