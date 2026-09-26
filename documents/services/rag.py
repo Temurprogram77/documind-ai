@@ -292,21 +292,53 @@ class RAGService:
                 yield "Gemini API kaliti (GEMINI_API_KEY) ko'rsatilmagan. Iltimos, sozlamalarda GEMINI_API_KEY ni sozlang."
                 return
 
-            genai.configure(api_key=api_key)
+            primary_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
+            # Fallback models in priority order if primary model hits 429 quota or rate limits
+            candidate_models = [primary_model]
+            for fallback in ["gemini-2.5-flash", "gemini-flash-latest"]:
+                if fallback not in candidate_models:
+                    candidate_models.append(fallback)
 
-            model_name = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
+            last_error = None
+            success = False
 
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": 0.3}
-            )
-            response = model.generate_content(full_prompt, stream=True)
-            for chunk in response:
+            for model_candidate in candidate_models:
                 try:
-                    if chunk.text:
-                        yield chunk.text
-                except Exception:
-                    pass
+                    model = genai.GenerativeModel(
+                        model_name=model_candidate,
+                        generation_config={"temperature": 0.3}
+                    )
+                    response = model.generate_content(full_prompt, stream=True)
+                    has_tokens = False
+                    for chunk in response:
+                        try:
+                            if chunk.text:
+                                has_tokens = True
+                                yield chunk.text
+                        except Exception:
+                            pass
+                    if has_tokens:
+                        success = True
+                        break
+                except Exception as exc:
+                    err_str = str(exc)
+                    last_error = exc
+                    logger.warning("Model %s generation failed: %s", model_candidate, err_str[:120])
+                    # If 429 Quota or ResourceExhausted, automatically try next fallback candidate
+                    if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
+                        continue
+                    else:
+                        break
+
+            if not success and last_error:
+                err_str = str(last_error)
+                if "429" in err_str or "quota" in err_str.lower():
+                    yield (
+                        "\n\n⚠️ Google Gemini bepul tarif limiti (429 Quota Exceeded) vaqtinchalik to'ldi. "
+                        "Iltimos, 1-2 daqiqadan so'ng qayta urinib ko'ring yoki .env faylida yangi GEMINI_API_KEY o'rnating."
+                    )
+                else:
+                    yield f"\n\n[Javob yaratishda xatolik: {err_str}]"
         except Exception as exc:
             logger.exception("Error during LLM stream generation")
             yield f"\n\n[Javob yaratishda xatolik: {str(exc)}]"
