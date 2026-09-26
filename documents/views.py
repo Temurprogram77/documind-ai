@@ -189,9 +189,10 @@ class ChatSSEView(APIView):
                     data = json.dumps({"token": token})
                     yield f"data: {data}\n\n"
                 yield "data: [DONE]\n\n"
-            except Exception:
+            except Exception as exc:
                 logger.exception("Error during SSE stream response generation")
-                err = json.dumps({"error": "An error occurred while generating the answer."})
+                err_msg = str(exc) or "An error occurred while generating the answer."
+                err = json.dumps({"error": err_msg})
                 yield f"data: {err}\n\n"
 
         response = StreamingHttpResponse(

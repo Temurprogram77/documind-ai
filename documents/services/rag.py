@@ -140,80 +140,111 @@ class RAGService:
         Retrieves top relevant chunks filtered strictly by user_id and document_id.
         Discards chunks exceeding the distance threshold.
         """
-        where_filter = {
-            "$and": [
-                {"user_id": user_id},
-                {"document_id": document_id}
-            ]
-        }
+        try:
+            total_elements = self.collection.count()
+            if total_elements == 0:
+                logger.warning("Query attempted but ChromaDB collection is empty.")
+                return []
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            where=where_filter,
-            include=["documents", "metadatas", "distances"]
-        )
+            actual_k = max(1, min(top_k, total_elements))
 
-        documents = results.get("documents", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0] if results.get("distances") else []
+            # ChromaDB requires explicit operator dictionaries ($eq) inside $and lists
+            where_filter = {
+                "$and": [
+                    {"user_id": {"$eq": int(user_id)}},
+                    {"document_id": {"$eq": int(document_id)}}
+                ]
+            }
 
-        contexts: List[Dict[str, Any]] = []
-        for i, doc in enumerate(documents):
-            dist = distances[i] if i < len(distances) else 0.0
-            if dist <= self.SIMILARITY_THRESHOLD:
-                meta = metadatas[i] if i < len(metadatas) else {}
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=actual_k,
+                where=where_filter,
+                include=["documents", "metadatas", "distances"]
+            )
+
+            documents = results.get("documents", [[]])[0] if results.get("documents") else []
+            metadatas = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
+            distances = results.get("distances", [[]])[0] if results.get("distances") else []
+
+            contexts: List[Dict[str, Any]] = []
+            for i, doc in enumerate(documents):
+                dist = distances[i] if i < len(distances) else 0.0
+                if dist <= self.SIMILARITY_THRESHOLD:
+                    meta = metadatas[i] if i < len(metadatas) else {}
+                    contexts.append({
+                        "text": doc,
+                        "page_number": meta.get("page_number", 1),
+                        "distance": dist,
+                    })
+
+            # If strict threshold filtered all out, fallback to top document
+            if not contexts and documents:
+                meta = metadatas[0] if metadatas else {}
                 contexts.append({
-                    "text": doc,
+                    "text": documents[0],
                     "page_number": meta.get("page_number", 1),
-                    "distance": dist,
+                    "distance": distances[0] if distances else 0.0,
                 })
 
-        return contexts
+            return contexts
+        except Exception:
+            logger.exception("Error querying context from ChromaDB")
+            return []
 
     def stream_answer(self, user_id: int, document_id: int, query: str) -> Iterator[str]:
         """
         Streams grounded answer tokens from Gemini based on retrieved snippets.
         """
-        contexts = self.query_context(
-            user_id=user_id,
-            document_id=document_id,
-            query=query,
-            top_k=settings.TOP_K
-        )
-
-        if not contexts:
-            yield "I cannot find this information in the document."
-            return
-
-        formatted_context = "\n\n".join([
-            f"--- Snippet {i+1} [Page {c['page_number']}] ---\n{c['text']}"
-            for i, c in enumerate(contexts)
-        ])
-
-        full_prompt = (
-            f"SYSTEM INSTRUCTION:\n{self.STRICT_SYSTEM_PROMPT}\n\n"
-            f"CONTEXT:\n{formatted_context}\n\n"
-            f"USER QUERY:\n{query}\n\n"
-            f"ANSWER:"
-        )
-
-        if not settings.GEMINI_API_KEY:
-            yield "Service is currently operating in offline mode. Please configure GEMINI_API_KEY."
-            return
-
         try:
+            contexts = self.query_context(
+                user_id=user_id,
+                document_id=document_id,
+                query=query,
+                top_k=getattr(settings, "TOP_K", 4)
+            )
+
+            if not contexts:
+                yield "Hujjatdan ushbu savol bo'yicha ma'lumot topilmadi."
+                return
+
+            formatted_context = "\n\n".join([
+                f"--- Snippet {i+1} [Page {c['page_number']}] ---\n{c['text']}"
+                for i, c in enumerate(contexts)
+            ])
+
+            full_prompt = (
+                f"SYSTEM INSTRUCTION:\n{self.STRICT_SYSTEM_PROMPT}\n\n"
+                f"CONTEXT:\n{formatted_context}\n\n"
+                f"USER QUERY:\n{query}\n\n"
+                f"ANSWER:"
+            )
+
+            api_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+            if not api_key:
+                yield "Gemini API kaliti (GEMINI_API_KEY) ko'rsatilmagan. Iltimos, Render environment sozlamalarida GEMINI_API_KEY ni sozlang."
+                return
+
+            genai.configure(api_key=api_key)
+
+            model_name = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash") or "gemini-1.5-flash"
+            if "3.6" in model_name:
+                model_name = "gemini-1.5-flash"
+
             model = genai.GenerativeModel(
-                model_name=settings.GEMINI_MODEL,
+                model_name=model_name,
                 generation_config={"temperature": 0.2}
             )
             response = model.generate_content(full_prompt, stream=True)
             for chunk in response:
-                if chunk.text:
-                    yield chunk.text
-        except Exception:
+                try:
+                    if chunk.text:
+                        yield chunk.text
+                except Exception:
+                    pass
+        except Exception as exc:
             logger.exception("Error during LLM stream generation")
-            yield "\n\n[An error occurred while generating the answer. Please try again later.]"
+            yield f"\n\n[Javob yaratishda xatolik: {str(exc)}]"
 
     def reset_vector_store(self) -> None:
         """Deletes and recreates the ChromaDB collection (staff only)."""
