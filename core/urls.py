@@ -10,7 +10,12 @@ def health_check(request):
         response = HttpResponse(status=200)
         response["Content-Type"] = "application/json"
         return response
-    return JsonResponse({"status": "healthy", "service": "DocuMind AI Backend"})
+    return JsonResponse({
+        "status": "healthy",
+        "service": "DocuMind AI Backend",
+        "version": "2.0-full-rag",
+        "features": ["full_context_rag", "gemini_fallback", "self_healing"]
+    })
 
 
 urlpatterns = [
