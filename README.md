@@ -21,7 +21,7 @@ High-performance, multi-tenant RAG (Retrieval-Augmented Generation) document int
 * **Authentication**: SimpleJWT 5.5
 * **Vector Store**: ChromaDB 1.5
 * **PDF Parser**: PyPDF 6.19
-* **LLM Engine**: Google Generative AI (Gemini 1.5 Flash)
+* **LLM Engine**: Google Generative AI (Gemini 3.6 Flash)
 * **WSGI Server**: Gunicorn 26.2
 * **Testing**: Pytest, Pytest-Django
 

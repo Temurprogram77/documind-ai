@@ -293,7 +293,10 @@ class RAGService:
                 return
 
             primary_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
-            # Fallback models in priority order if primary model hits 429 quota or rate limits
+            if "1.5" in primary_model:
+                primary_model = "gemini-3.6-flash"
+
+            # Prioritize gemini-3.6-flash as requested by user
             candidate_models = [primary_model]
             for fallback in ["gemini-2.5-flash", "gemini-flash-latest"]:
                 if fallback not in candidate_models:
