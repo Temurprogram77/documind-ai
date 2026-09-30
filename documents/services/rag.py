@@ -270,10 +270,11 @@ class RAGService:
                 ])
                 context_instruction = (
                     f"HUJJAT MATNI (KONTEKST):\n{formatted_context}\n\n"
-                    "KO'RSATMA: Yuqoridagi hujjat matnidan foydalanib, foydalanuvchining savoliga batafsil, "
-                    "aniq va to'liq javob bering. Hujjatdagi ma'lumotlarga qat'iy tayaning va tegishli sahifa raqamlarini "
-                    "(masalan, [1-sahifa] yoki [Sahifa 1]) ko'rsating. Agar foydalanuvchi umumiy savol bersa (masalan, 'PDF nima haqida?'), "
-                    "hujjatning to'liq mazmuni, unda keltirilgan shaxs/mavzu, asosiy bo'limlar va faktlarni to'liq ochib bering."
+                    "KO'RSATMA: Yuqoridagi hujjat matnidan to'liq foydalanib, foydalanuvchining savoliga batafsil, "
+                    "aniq va tushunarli javob bering. Hujjatdagi barcha ma'lumotlarga (ism-sharif, soha, loyihalar, texnologiyalar va b.) "
+                    "qat'iy tayaning va tegishli sahifa raqamlarini (masalan, [1-sahifa] yoki [Sahifa 1]) ko'rsating. "
+                    "Agar foydalanuvchi so'ragan aniq ma'lumot hujjat matnida umuman mavjud bo'lmasa, o'zingizdan to'qimang "
+                    "va 'Hujjatda bu haqida ma'lumot berilmagan' deb aniq bildiring."
                 )
             else:
                 context_instruction = (
